@@ -1,7 +1,4 @@
-﻿using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using LuoliCommon;
+﻿using LuoliCommon;
 using LuoliCommon.DTO.Coupon;
 using LuoliCommon.DTO.ExternalOrder;
 using LuoliCommon.Enums;
@@ -9,9 +6,15 @@ using LuoliCommon.Logger;
 using LuoliHelper.Utils;
 using LuoliUtils;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using System;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using ThirdApis;
 
 namespace ShipBOT;
 
@@ -66,9 +69,10 @@ class Program
         if (!init())
             throw new Exception("initial failed; cannot start");
 
+        var services = new ServiceCollection();
+
         #region add ILogger
 
-        var services = new ServiceCollection();
         services.AddHttpClient("LokiHttpClient")
             .ConfigureHttpClient(client =>
             {
@@ -123,6 +127,15 @@ class Program
 
         #endregion
 
+        //这里从淘宝来就是Agiso
+        //如果有小程序，就再写一个IShipBOT实现类
+        services.AddScoped<IShipBOT, AgisoShipBOT>();
+        services.AddScoped<AsynsApis>(prov =>
+        {
+            ILogger logger = prov.GetRequiredService<ILogger>();
+            return new AsynsApis(logger, Config.KVPairs["AsynsApiUrl"]);
+        });
+        services.AddScoped<AgisoApis>();
         //消费消息
         services.AddHostedService<ConsumerService>();
 
@@ -130,19 +143,23 @@ class Program
 
         _logger =  ServiceLocator.GetService<LuoliCommon.Logger.ILogger>();
 
+        await ApiCaller.NotifyAsync($"{Config.ServiceName}.{Config.ServiceId} 启动了", NotifyUsers);
+
+
         #region luoli code
 
         // 应用启动后，通过服务容器获取 LokiLogger 实例
         var prov = services.BuildServiceProvider();
+
+        // 应用启动后，通过服务容器获取 LokiLogger 实例
+
         try
         {
             // 获取 LokiLogger 实例
             var lokiLogger = prov.GetRequiredService<LuoliCommon.Logger.ILogger>();
 
             // 记录启动日志
-            lokiLogger.Info("应用程序启动成功");
-            lokiLogger.Debug($"端口：{Config.BindAddr}");
-
+            lokiLogger.Info($"{Config.ServiceName}启动成功");
 
             var assembly = Assembly.GetExecutingAssembly();
             var fileVersionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location);
@@ -158,14 +175,41 @@ class Program
         }
 
 
+
+
+
+        var hostedServices = prov.GetServices<IHostedService>();
+        foreach (var hostedService in hostedServices)
+        {
+            // 启动后台服务（触发 StartAsync -> ExecuteAsync）
+            await hostedService.StartAsync(CancellationToken.None);
+        }
+
+        // 7. 保持程序运行（否则控制台会直接退出）
+        Console.WriteLine("按 Ctrl+C 退出...");
+        var cancellationTokenSource = new CancellationTokenSource();
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            e.Cancel = true; // 取消默认退出行为
+            cancellationTokenSource.Cancel(); // 触发 cancellationToken
+        };
+
+        // 等待退出信号
+        await Task.Delay(Timeout.Infinite, cancellationTokenSource.Token)
+            .ContinueWith(_ => Task.CompletedTask); // 忽略取消异常
+
+        // 8. 停止后台服务（优雅退出）
+        foreach (var hostedService in hostedServices)
+        {
+            await hostedService.StopAsync(CancellationToken.None);
+        }
+
+
         #endregion
 
-       
-        
-        await ApiCaller.NotifyAsync($"{Config.ServiceName}.{Config.ServiceId} 启动了", NotifyUsers);
 
-        int count = 0;
-        int successCount = 0;
+        //int count = 0;
+        //int successCount = 0;
 
         // if (Config.KVPairs["BOTType"] == "Sexytea")
         //     Bot = new SexyteaPlaceOrderBOT();
@@ -178,17 +222,17 @@ class Program
     }
 
 
-    private static void Notify(CouponDTO coupon, ExternalOrderDTO externalOrder, string coreMsg)
+    public static void Notify(CouponDTO coupon, ExternalOrderDTO externalOrder, string coreMsg)
     {
         ApiCaller.NotifyAsync(
             @$"{Config.ServiceName}.{Config.ServiceId}
 {coreMsg}
 
 卡密:{coupon.Coupon}
-卡密状态:{EnumOperator.GetDescription((ECouponStatus)coupon.Status)}
+卡密状态:{EnumHandler.GetDescription((ECouponStatus)coupon.Status)}
 卡密金额:{coupon.AvailableBalance}
 卡密绑定订单:{coupon.ExternalOrderFromPlatform} - {coupon.ExternalOrderTid}
 订单金额:{externalOrder.PayAmount}
-订单内容:{JsonSerializer.Serialize(externalOrder.Order)}", NotifyUsers);
+订单内容:{JsonSerializer.Serialize(externalOrder.SubOrders)}", NotifyUsers);
     }
 }

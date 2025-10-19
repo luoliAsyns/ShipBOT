@@ -6,6 +6,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <AssemblyVersion>25</AssemblyVersion>
+        <FileVersion>25.10.19.1</FileVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -15,15 +17,15 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\Common\LuoliCommon\LuoliCommon.csproj" />
-      <ProjectReference Include="..\..\Common\LuoliUtils\LuoliUtils.csproj" />
-      <ProjectReference Include="..\..\Common\ThirdApis\ThirdApis.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
       <PackageReference Include="CSRedisCore" Version="3.8.806" />
       <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0-rc.1.25451.107" />
       <PackageReference Include="RabbitMQ.Client" Version="7.1.2" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\Common\LuoliCommon\LuoliCommon.csproj" />
+      <ProjectReference Include="..\..\Common\LuoliUtils\LuoliUtils.csproj" />
+      <ProjectReference Include="..\..\Common\ThirdApis\ThirdApis.csproj" />
     </ItemGroup>
 
 </Project>

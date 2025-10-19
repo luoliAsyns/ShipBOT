@@ -1,4 +1,5 @@
-﻿using LuoliCommon.DTO.ExternalOrder;
+﻿using LuoliCommon.DTO.Coupon;
+using LuoliCommon.DTO.ExternalOrder;
 using LuoliUtils;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
@@ -16,17 +17,28 @@ namespace ShipBOT
     public class ConsumerService : BackgroundService
     {
         private readonly IChannel _channel;
-        private readonly IServiceProvider _serviceProvider;
+        private readonly AsynsApis _asynsApis;
         private readonly string _queueName =RabbitMQKeys.CouponGenerated; // 替换为你的队列名
         private readonly LuoliCommon.Logger.ILogger _logger;
+
+        private readonly IShipBOT Bot;
+
+        private static JsonSerializerOptions _options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true, // 关键配置：忽略大小写
+        };
+
+
         public ConsumerService(IChannel channel,
-             IServiceProvider serviceProvider,
-             LuoliCommon.Logger.ILogger logger
+             AsynsApis asynsApis,
+             LuoliCommon.Logger.ILogger logger,
+             IShipBOT bot
              )
         {
             _channel = channel;
             _logger = logger;
-            _serviceProvider = serviceProvider;
+            _asynsApis = asynsApis;
+            Bot = bot;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -57,72 +69,67 @@ namespace ShipBOT
 
                 try
                 {
-                    _logger.Info($"收到:{msg}, 开始处理");
-                    count++;
+                    _logger.Info($"收到:{message}, 开始处理");
 
+                    var couponDto = JsonSerializer.Deserialize<CouponDTO>(message, _options);
 
-                    MOrder order = SqlClient.Queryable<MOrder>().Where(O => O.order_no == msg).First();
+                    //这里要重新从数据库获取订单，防止数据不一致
+                    //可能收到退款通知什么的
+                    var eoResp = await _asynsApis.ExternalOrderQuery(couponDto.ExternalOrderFromPlatform, couponDto.ExternalOrderTid);
+                    var eoDto = eoResp.data;
+                    
+                    var couponResp = await _asynsApis.CouponQuery(eoDto.FromPlatform, eoDto.Tid);
+                    if (!eoResp.ok && !couponResp.ok)
+                    {
+                        _logger.Error($"订单/卡密查询失败");
+                        return;
+                    }
+                    couponDto = couponResp.data;
 
-                    var (validateResult, validateMsg) = Bot.Validate(order).Result;
+                    var (validateResult, validateMsg) = Bot.Validate(couponDto, eoDto);
+
                     if (!validateResult)
                     {
                         _logger.Error($"订单校验失败:{validateMsg}");
-                        Notify(order, $"订单校验失败:{validateMsg}");
+                        Notify(couponDto, eoDto, $"订单校验失败:{validateMsg}");
                         //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.CouponChanged, order.consume_coupon);
+                        RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
                         return;
                     }
 
-                    var (placeResult, placeMsg) = Bot.PlaceOrder(order).Result;
-                    if (!placeResult)
+                    var shipResp = await Bot.Ship(couponDto);
+                    if (!shipResp.ok)
                     {
-                        _logger.Error($"下单失败:{placeMsg},订单 订单号:{order.order_no}, 已付金额:{order.pay_amount}");
-                        Notify(order, $"下单失败:{placeMsg}");
+                        _logger.Error($"发货失败:{shipResp.msg},订单 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
+                        Notify(couponDto, eoDto, $"下单失败:{shipResp.msg}");
                         //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.CouponChanged, order.consume_coupon);
+                        RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
                         return;
                     }
 
-                    var (updateResult, updateMsg) = Bot.UpdateResult(order).Result;
-                    if (!updateResult)
+
+                    var sendMsgResp = await Bot.SendMsg(couponDto);
+                    if (!sendMsgResp.ok)
                     {
-                        _logger.Error($"更新订单状态失败:{updateMsg},订单 订单号:{order.order_no}, 已付金额:{order.pay_amount}");
-                        Notify(order, $"更新订单状态失败:{updateMsg}");
+                        _logger.Error($"发送消息失败:{sendMsgResp.msg},订单 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
+                        Notify(couponDto, eoDto, $"发送消息失败:{sendMsgResp.msg}");
                         //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.CouponChanged, order.consume_coupon);
+                        RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
                         return;
                     }
 
 
+                    _logger.Info($"{Program.Config.ServiceName}订单处理成功 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
 
-                    // 调用Controller中的方法
-                    var result = await cs.GenerateAsync(dto);
+                    //通知页面刷新
+                    RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
 
-                        // 如果需要处理返回结果
-                        if (result.ok)
-                        {
-
-                        _logger.Info($"订单完成 订单号:{order.order_no}, 已付金额:{order.pay_amount}");
-                       
-                        //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.CouponChanged, order.consume_coupon);
-
-                        // 处理成功，确认消息
-                        await _channel.BasicAckAsync(
-                                deliveryTag: ea.DeliveryTag,
-                                multiple: false,
-                                stoppingToken);
-                        }
-                        else
-                        {
-                            // 处理失败，不重新入队
-                            _logger.Error("while ConsumerService, insert ExternalOrderDTO failed");
-                            await _channel.BasicNackAsync(
-                                deliveryTag: ea.DeliveryTag,
-                                multiple: false,
-                                requeue: false,
-                                stoppingToken);
-                        }
+                    // 处理成功，确认消息
+                    await _channel.BasicAckAsync(
+                            deliveryTag: ea.DeliveryTag,
+                            multiple: false,
+                            stoppingToken);
+              
                 }
                 catch (Exception ex)
                 {
@@ -155,6 +162,16 @@ namespace ShipBOT
                 await Task.Delay(1000, stoppingToken);
             }
         }
+
+
+        private void Notify(CouponDTO coupon, ExternalOrderDTO externalOrder, string coreMsg)
+        {
+            Program.Notify(
+                coupon,
+                externalOrder,
+                coreMsg);
+        }
+
     }
 
 
