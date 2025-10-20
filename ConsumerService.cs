@@ -81,7 +81,8 @@ namespace ShipBOT
                     var couponResp = await _asynsApis.CouponQuery(eoDto.FromPlatform, eoDto.Tid);
                     if (!eoResp.ok && !couponResp.ok)
                     {
-                        _logger.Error($"订单/卡密查询失败");
+                        _logger.Error("订单/卡密查询失败");
+                        Notify(couponDto, eoDto, "订单/卡密查询失败", ea.DeliveryTag , stoppingToken);
                         return;
                     }
                     couponDto = couponResp.data;
@@ -91,9 +92,7 @@ namespace ShipBOT
                     if (!validateResult)
                     {
                         _logger.Error($"订单校验失败:{validateMsg}");
-                        Notify(couponDto, eoDto, $"订单校验失败:{validateMsg}");
-                        //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
+                        Notify(couponDto, eoDto, $"订单校验失败:{validateMsg}", ea.DeliveryTag, stoppingToken);
                         return;
                     }
 
@@ -101,9 +100,7 @@ namespace ShipBOT
                     if (!shipResp.ok)
                     {
                         _logger.Error($"发货失败:{shipResp.msg},订单 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
-                        Notify(couponDto, eoDto, $"下单失败:{shipResp.msg}");
-                        //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
+                        Notify(couponDto, eoDto, $"下单失败:{shipResp.msg}", ea.DeliveryTag, stoppingToken);
                         return;
                     }
 
@@ -112,9 +109,7 @@ namespace ShipBOT
                     if (!sendMsgResp.ok)
                     {
                         _logger.Error($"发送消息失败:{sendMsgResp.msg},订单 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
-                        Notify(couponDto, eoDto, $"发送消息失败:{sendMsgResp.msg}");
-                        //通知页面刷新
-                        RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, eoDto.Tid);
+                        Notify(couponDto, eoDto, $"发送消息失败:{sendMsgResp.msg}", ea.DeliveryTag, stoppingToken);
                         return;
                     }
 
@@ -129,7 +124,13 @@ namespace ShipBOT
                             deliveryTag: ea.DeliveryTag,
                             multiple: false,
                             stoppingToken);
-              
+
+                    await _asynsApis.CouponUpdate(new LuoliCommon.DTO.Coupon.UpdateRequest()
+                    {
+                        Coupon = couponDto,
+                        Event = LuoliCommon.Enums.EEvent.Coupon_Shipment
+                    });
+
                 }
                 catch (Exception ex)
                 {
@@ -164,8 +165,29 @@ namespace ShipBOT
         }
 
 
-        private void Notify(CouponDTO coupon, ExternalOrderDTO externalOrder, string coreMsg)
+        /// <summary>
+        /// ShipFailed  统一处理
+        /// </summary>
+        /// <param name="coupon"></param>
+        /// <param name="externalOrder"></param>
+        /// <param name="coreMsg"></param>
+        private void Notify(CouponDTO coupon, ExternalOrderDTO externalOrder, string coreMsg, ulong tag, CancellationToken token)
         {
+            RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, externalOrder.Tid);
+
+            _asynsApis.CouponUpdate(new LuoliCommon.DTO.Coupon.UpdateRequest()
+            {
+                Coupon = coupon,
+                Event = LuoliCommon.Enums.EEvent.Coupon_ShipFailed
+            });
+
+            _channel.BasicNackAsync(
+                      deliveryTag: tag,
+                      multiple: false,
+                      requeue: false,
+                      token);
+
+
             Program.Notify(
                 coupon,
                 externalOrder,
