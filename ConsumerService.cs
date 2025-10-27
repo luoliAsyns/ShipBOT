@@ -18,7 +18,7 @@ namespace ShipBOT
     {
         private readonly IChannel _channel;
         private readonly AsynsApis _asynsApis;
-        private readonly string _queueName =RabbitMQKeys.CouponGenerated; // 替换为你的队列名
+        private readonly string _queueName = Program.Config.KVPairs["StartWith"] + RabbitMQKeys.CouponGenerated; // 替换为你的队列名
         private readonly LuoliCommon.Logger.ILogger _logger;
 
         private readonly IShipBOT Bot;
@@ -69,7 +69,8 @@ namespace ShipBOT
 
                 try
                 {
-                    _logger.Info($"收到:{message}, 开始处理");
+                    _logger.Info("ShipBOT.ConsumerService[For Call Agiso] received message");
+                    _logger.Debug(message);
 
                     var couponDto = JsonSerializer.Deserialize<CouponDTO>(message, _options);
 
@@ -87,6 +88,8 @@ namespace ShipBOT
                     }
                     couponDto = couponResp.data;
 
+                    _logger.Info($"CouponDTO.Coupon[{couponDto.Coupon}] 查询 EO&Coupon 成功");
+
                     var (validateResult, validateMsg) = Bot.Validate(couponDto, eoDto);
 
                     if (!validateResult)
@@ -96,6 +99,8 @@ namespace ShipBOT
                         return;
                     }
 
+                    _logger.Info($"CouponDTO.Coupon[{couponDto.Coupon}] 校验成功");
+                    
                     var shipResp = await Bot.Ship(couponDto);
                     if (!shipResp.ok)
                     {
@@ -104,6 +109,7 @@ namespace ShipBOT
                         return;
                     }
 
+                    _logger.Info($"CouponDTO.Coupon[{couponDto.Coupon}] 发货成功");
 
                     var sendMsgResp = await Bot.SendMsg(couponDto);
                     if (!sendMsgResp.ok)
@@ -113,6 +119,7 @@ namespace ShipBOT
                         return;
                     }
 
+                    _logger.Info($"CouponDTO.Coupon[{couponDto.Coupon}] 发送消息成功");
 
                     _logger.Info($"{Program.Config.ServiceName}订单处理成功 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
 
@@ -143,8 +150,16 @@ namespace ShipBOT
                         multiple: false,
                         requeue: false,
                         stoppingToken);
+
+                    ApiCaller.NotifyAsync(
+@$"{Program.Config.ServiceName}.{Program.Config.ServiceId}
+MQ 消费过程中异常
+
+message:[{message}]", Program.NotifyUsers);
                 }
             };
+
+            _logger.Info($"ShipBOT.ConsumerService start listen MQ[{_queueName}]");
 
             // 开始消费
             await _channel.BasicConsumeAsync(

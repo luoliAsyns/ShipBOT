@@ -33,6 +33,7 @@ class Program
 
     private static bool init()
     {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
         bool result = false;
         string configFolder = "/app/ShipBOT/configs";
 
@@ -143,7 +144,6 @@ class Program
 
         _logger =  ServiceLocator.GetService<LuoliCommon.Logger.ILogger>();
 
-        await ApiCaller.NotifyAsync($"{Config.ServiceName}.{Config.ServiceId} 启动了", NotifyUsers);
 
 
         #region luoli code
@@ -167,6 +167,9 @@ class Program
 
             lokiLogger.Info($"CurrentDirectory:[{Environment.CurrentDirectory}]");
             lokiLogger.Info($"Current File Version:[{fileVersion}]");
+
+            await ApiCaller.NotifyAsync($"{Config.ServiceName}.{Config.ServiceId} v{fileVersion} 启动了", NotifyUsers);
+
         }
         catch (Exception ex)
         {
