@@ -27,15 +27,14 @@ namespace ShipBOT
             string msg = await RedisHelper.GetAsync<string>($"msg.template");
 
             string rawLink = $"{Program.Config.KVPairs["ConsumeUrl"]}?coupon={coupon.Coupon}";
-            string shortlink = $"{Program.Config.KVPairs["ConsumeUrl"]}?sl={LuoliUtils.Decoder.GenerateShortCode(rawLink)}";
 
             msg = msg.Replace("{tid}", coupon.ExternalOrderTid);
-            msg = msg.Replace("{link}", shortlink);
+            msg = msg.Replace("{link}", rawLink);
 
-            RedisHelper.SetAsync(shortlink, rawLink, 24*60*60);
+            RedisHelper.SetAsync(coupon.Coupon, rawLink, 24*60*60);
 
             coupon.RawUrl = rawLink;
-            coupon.ShortUrl = shortlink;
+            coupon.ShortUrl = coupon.Coupon;
 
             var resp = await _agisoApis.SendWWMsg(
                 Program.Config.KVPairs["AgisoAccessToken"],
