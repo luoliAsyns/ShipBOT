@@ -131,6 +131,7 @@ namespace ShipBOT
                             deliveryTag: ea.DeliveryTag,
                             multiple: false,
                             stoppingToken);
+                    RedisHelper.IncrByAsync(RedisKeys.Prom_Shipped);
 
                     await _asynsApis.CouponUpdate(new LuoliCommon.DTO.Coupon.UpdateRequest()
                     {
@@ -141,6 +142,8 @@ namespace ShipBOT
                 }
                 catch (Exception ex)
                 {
+                    RedisHelper.IncrByAsync(RedisKeys.Prom_ShipFailed);
+
                     _logger.Error("while ConsumerService consuming");
                     _logger.Error(ex.Message);
                     // 处理异常，记录日志
@@ -190,6 +193,8 @@ message:[{message}]", Program.NotifyUsers);
         {
             RedisHelper.Publish(RedisKeys.Pub_RefreshShipStatus, externalOrder.Tid);
 
+            RedisHelper.IncrByAsync(RedisKeys.Prom_ShipFailed);
+            coupon.ErrorCode = LuoliCommon.Enums.ECouponErrorCode.AgisoShipFailed;
             _asynsApis.CouponUpdate(new LuoliCommon.DTO.Coupon.UpdateRequest()
             {
                 Coupon = coupon,
