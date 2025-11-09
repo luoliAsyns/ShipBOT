@@ -101,7 +101,7 @@ namespace ShipBOT
 
                     _logger.Info($"CouponDTO.Coupon[{couponDto.Coupon}] 校验成功");
                     
-                    var shipResp = await Bot.Ship(couponDto);
+                    var shipResp = await Bot.Ship(couponDto, eoDto);
                     if (!shipResp.ok)
                     {
                         _logger.Error($"发货失败:{shipResp.msg},订单 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
@@ -111,7 +111,7 @@ namespace ShipBOT
 
                     _logger.Info($"CouponDTO.Coupon[{couponDto.Coupon}] 发货成功");
 
-                    var sendMsgResp = await Bot.SendMsg(couponDto);
+                    var sendMsgResp = await Bot.SendMsg(couponDto, eoDto);
                     if (!sendMsgResp.ok)
                     {
                         _logger.Error($"发送消息失败:{sendMsgResp.msg},订单 订单号:{eoDto.Tid}, 已付金额:{eoDto.PayAmount}");
