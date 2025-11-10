@@ -118,8 +118,8 @@ namespace ShipBOT
             if(coupon.Status != LuoliCommon.Enums.ECouponStatus.Generated)
                 return (false, $"CouponDTO Status:[{coupon.Status.ToString()}], must be [ECouponStatus.Generated]");
 
-            if (coupon.Payment !=coupon.AvailableBalance)
-                return (false, $"CouponDTO Payment[{coupon.Payment}] must be equal to AvailableBalance[{coupon.AvailableBalance}]");
+            if (coupon.CreditLimit != coupon.AvailableBalance)
+                return (false, $"CouponDTO CreditLimit[{coupon.CreditLimit}] must be equal to AvailableBalance[{coupon.AvailableBalance}]");
 
             if(eo.Status == LuoliCommon.Enums.EExternalOrderStatus.Refunding)
                 return (false, $"ExternalOrderDTO Status[{eo.Status.ToString()}], so do not process");
