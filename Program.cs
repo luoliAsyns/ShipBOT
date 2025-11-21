@@ -45,9 +45,6 @@ class Program
         {
             Config = new Config($"{configFolder}/sys.json");
 
-            NotifyUsers = Config.KVPairs["NotifyUsers"].Split(',').Select(s => s.Trim())
-                .Where(s => !String.IsNullOrEmpty(s)).ToList();
-
             RedisConnection = new RedisConnection($"{configFolder}/redis.json");
 
             var rds = new CSRedis.CSRedisClient(
@@ -55,6 +52,8 @@ class Program
             RedisHelper.Initialization(rds);
 
             RabbitMQConnection = new RabbitMQConnection($"{configFolder}/rabbitmq.json");
+
+            NotifyUsers = RedisHelper.SMembers(RedisKeys.NotifyUsers).ToList();
 
             result = true;
         });
