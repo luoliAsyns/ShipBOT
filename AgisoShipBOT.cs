@@ -24,15 +24,15 @@ namespace ShipBOT
 
         public async Task<ApiResponse<bool>> SendMsg(CouponDTO coupon, ExternalOrderDTO dto)
         {
-
-            string msg = await RedisHelper.GetAsync<string>($"msg.template");
+           
+            string msg = await RedisHelper.GetAsync<string>($"{dto.TargetProxy.ToString()}.msg");
 
             string rawLink = $"{Program.Config.KVPairs["ConsumeUrl"]}?coupon={coupon.Coupon}";
 
             msg = msg.Replace("{tid}", coupon.ExternalOrderTid);
             msg = msg.Replace("{link}", rawLink);
 
-            RedisHelper.SetAsync(coupon.Coupon, rawLink, 24*60*60);
+            RedisHelper.SetAsync(coupon.Coupon, rawLink, 24 * 60 * 60);
 
             coupon.RawUrl = rawLink;
             coupon.ShortUrl = coupon.Coupon;
