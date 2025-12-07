@@ -26,8 +26,9 @@ namespace ShipBOT
         {
            
             string msg = await RedisHelper.GetAsync<string>($"{dto.TargetProxy.ToString()}.msg");
+            string url = await RedisHelper.GetAsync<string>($"{dto.TargetProxy.ToString()}.consume.url");
 
-            string rawLink = $"{Program.Config.KVPairs["ConsumeUrl"]}?coupon={coupon.Coupon}";
+            string rawLink = $"{url}?coupon={coupon.Coupon}";
 
             msg = msg.Replace("{tid}", coupon.ExternalOrderTid);
             msg = msg.Replace("{link}", rawLink);
