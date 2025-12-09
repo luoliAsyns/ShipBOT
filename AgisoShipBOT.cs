@@ -53,11 +53,25 @@ namespace ShipBOT
                 return result;
             }
 
-            var resp = await _agisoApis.SendWWMsg(
-                accessToken,
-                Program.Config.KVPairs["AgisoAppSecret"],
-                coupon.ExternalOrderTid,
-                msg);
+            (bool, string) resp = (false, string.Empty);
+
+            switch (dto.FromPlatform)
+            {
+                case "TAOBAO":
+                    resp =  await _agisoApis.SendWWMsg(
+                           accessToken,
+                           Program.Config.KVPairs["AgisoAppSecret"],
+                           coupon.ExternalOrderTid,
+                           msg);
+                    break;
+                case "XIANYU":
+                    resp = await _agisoApis.SendXYMsg(
+                           accessToken,
+                           Program.Config.KVPairs["AgisoAppSecret"],
+                           coupon.ExternalOrderTid,
+                           msg);
+                    break;
+            }
 
             if (resp.Item1)
             {
@@ -76,6 +90,9 @@ namespace ShipBOT
 
         public async Task<ApiResponse<bool>> Ship(CouponDTO coupon, ExternalOrderDTO dto)
         {
+            //闲鱼后台不发货
+            if(dto.FromPlatform == "XIANYU")
+                return new ApiResponse<bool>() { code = LuoliCommon.Enums.EResponseCode.Success, data = true };
 
             var accessToken = await RedisHelper.HGetAsync(RedisKeys.AgisoAccessToken, dto.SellerNick);
 
