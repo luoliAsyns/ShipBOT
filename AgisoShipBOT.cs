@@ -33,8 +33,6 @@ namespace ShipBOT
             msg = msg.Replace("{tid}", coupon.ExternalOrderTid);
             msg = msg.Replace("{link}", rawLink);
 
-            RedisHelper.SetAsync(coupon.Coupon, rawLink, 24 * 60 * 60);
-
             coupon.RawUrl = rawLink;
             coupon.ShortUrl = coupon.Coupon;
 
