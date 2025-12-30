@@ -2,6 +2,7 @@
 using LuoliCommon.DTO.Coupon;
 using LuoliCommon.DTO.ExternalOrder;
 using LuoliCommon.Enums;
+using LuoliCommon.Interfaces;
 using LuoliCommon.Logger;
 using LuoliHelper.Utils;
 using LuoliUtils;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Refit;
 using System;
 using System.Reflection;
 using System.Text;
@@ -25,7 +27,7 @@ class Program
 
     public static RabbitMQConnection RabbitMQConnection;
     public static RedisConnection RedisConnection;
-    public static IShipBOT Bot;
+    public static IShipBOT _bot;
 
 
     public static List<string> NotifyUsers;
@@ -130,18 +132,28 @@ class Program
         //这里从淘宝来就是Agiso
         //如果有小程序，就再写一个IShipBOT实现类
         services.AddScoped<IShipBOT, AgisoShipBOT>();
-        services.AddScoped<AsynsApis>(prov =>
-        {
-            ILogger logger = prov.GetRequiredService<ILogger>();
-            return new AsynsApis(logger, Config.KVPairs["AsynsApiUrl"]);
-        });
+       
+
         services.AddScoped<AgisoApis>();
+
+        #region 注册 Refit部分   4个带数据库的服务
+
+        services.AddRefitClient<IExternalOrderService>()
+            .ConfigureHttpClient(c => c.BaseAddress = new Uri($"http://{Config.KVPairs["StartWith"]}external-order-service:8080"));
+        services.AddRefitClient<ICouponService>()
+            .ConfigureHttpClient(c => c.BaseAddress = new Uri($"http://{Config.KVPairs["StartWith"]}coupon-service:8080"));
+        services.AddRefitClient<IConsumeInfoService>()
+            .ConfigureHttpClient(c => c.BaseAddress = new Uri($"http://{Config.KVPairs["StartWith"]}consume-info-service:8080"));
+        services.AddRefitClient<IUserService>()
+            .ConfigureHttpClient(c => c.BaseAddress = new Uri($"http://{Config.KVPairs["StartWith"]}user-service:8080"));
+
+        #endregion
+
+
         //消费消息
         services.AddHostedService<ConsumerService>();
 
         ServiceLocator.Initialize( services.BuildServiceProvider());
-
-        _logger =  ServiceLocator.GetService<LuoliCommon.Logger.ILogger>();
 
 
 
@@ -150,7 +162,6 @@ class Program
         // 应用启动后，通过服务容器获取 LokiLogger 实例
         var prov = services.BuildServiceProvider();
 
-        // 应用启动后，通过服务容器获取 LokiLogger 实例
 
         try
         {
@@ -175,8 +186,6 @@ class Program
             // 启动日志失败时降级输出
             Console.WriteLine($"启动日志记录失败：{ex.Message}");
         }
-
-
 
 
 
@@ -208,15 +217,6 @@ class Program
 
 
         #endregion
-
-
-        //int count = 0;
-        //int successCount = 0;
-
-        // if (Config.KVPairs["BOTType"] == "Sexytea")
-        //     Bot = new SexyteaPlaceOrderBOT();
-        // else
-        //     throw new Exception($"unknown BOTType:{Config.KVPairs["BOTType"]}");
 
         
         
